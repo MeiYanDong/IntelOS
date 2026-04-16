@@ -104,10 +104,11 @@ def fetch_sec_10q(cik, days_back=100):
 
 
 def call_claude(prompt):
-    """调用 Claude API"""
+    """调用 Claude API，启用内置 web_search 工具"""
     payload = json.dumps({
         "model": "claude-opus-4-6",
         "max_tokens": 4096,
+        "tools": [{"type": "web_search_20250305", "name": "web_search"}],
         "messages": [{"role": "user", "content": prompt}]
     }).encode()
     req = urllib.request.Request(
@@ -120,9 +121,11 @@ def call_claude(prompt):
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.loads(resp.read())
-    return data["content"][0]["text"]
+    # 提取所有 text 块（工具调用结果已由 API 内部处理）
+    texts = [b["text"] for b in data["content"] if b.get("type") == "text"]
+    return "\n".join(texts)
 
 
 def save_to_readwise(title, content, date_str, tags):
@@ -155,11 +158,9 @@ def run_agent(agent_name):
 
     print(f"\n🤖 运行 {agent_name} Agent — {today}\n")
 
-    # Robinhood 专用：从 SEC 拉最近 30 天公告 + 抓 IR / Newsroom 页面
+    # Robinhood 专用：从 SEC 拉结构化数据（不依赖网页抓取）
     new_filings_text = ""
     quarterly_text = ""
-    ir_text = ""
-    newsroom_text = ""
     if agent_name == "robinhood":
         # 8-K 公告
         filings = fetch_sec_filings("0001783398", days_back=30)
@@ -181,12 +182,6 @@ def run_agent(agent_name):
         else:
             print("  无新季报/年报")
 
-        print("  📡 抓取 Robinhood IR 页面...")
-        ir_text = fetch_robinhood_ir()
-
-        print("  📡 抓取 Robinhood Newsroom...")
-        newsroom_text = fetch_robinhood_newsroom()
-
     prompt = f"""## 角色/role
 
 你是 Robinhood Markets ($HOOD) 的业务追踪者，为持仓或关注 $HOOD 的投资者写每周简报。
@@ -206,11 +201,14 @@ def run_agent(agent_name):
 ### SEC EDGAR 最新季报/年报（10-Q / 10-K，过去100天）
 {quarterly_text or "无"}
 
-### Robinhood 官方 IR 页面
-{ir_text[:2000] if ir_text else "抓取失败"}
+## 搜索任务/search
 
-### Robinhood Newsroom（产品公告）
-{newsroom_text[:2000] if newsroom_text else "抓取失败"}
+在写报告之前，请先用 web_search 工具搜索以下关键词，获取最新信息：
+1. "Robinhood Markets news {today[:7]}"（本月新闻）
+2. "Robinhood $HOOD earnings product launch {today[:4]}"（产品/财报动态）
+3. "Robinhood trading volume monthly {today[:7]}"（月度交易量）
+
+将搜索结果作为补充数据源，与上方 SEC 数据合并分析。
 
 ## 任务/task
 
