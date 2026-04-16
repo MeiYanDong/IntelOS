@@ -1,0 +1,37 @@
+name: Robinhood Weekly Report
+
+on:
+  schedule:
+    # 每周四 UTC 01:00（北京时间 09:00）
+    - cron: '0 1 * * 4'
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install markdown
+
+      - name: Run Robinhood Agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          READWISE_TOKEN: ${{ secrets.READWISE_TOKEN }}
+        run: python3 run_agent.py robinhood
+
+      - name: Commit updated memory
+        run: |
+          git config user.name "IntelOS Bot"
+          git config user.email "bot@intelos.local"
+          git add robinhood/memory.md
+          git diff --staged --quiet || git commit -m "chore: Robinhood weekly update $(date +%Y-%m-%d)"
+          git push
