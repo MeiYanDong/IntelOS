@@ -25,6 +25,7 @@ jobs:
       - name: Run Robinhood Agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           READWISE_TOKEN: ${{ secrets.READWISE_TOKEN }}
         run: python3 run_agent.py robinhood
 

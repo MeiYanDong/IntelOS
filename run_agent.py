@@ -9,6 +9,7 @@ import markdown as md
 
 READWISE_TOKEN     = os.environ.get("READWISE_TOKEN")
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY")
+ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 
 AGENTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -72,7 +73,7 @@ def call_claude(prompt):
         "messages": [{"role": "user", "content": prompt}]
     }).encode()
     req = urllib.request.Request(
-        "https://yunwu.ai/v1/messages",
+        f"{ANTHROPIC_BASE_URL}/v1/messages",
         data=payload,
         headers={
             "x-api-key": ANTHROPIC_API_KEY,
