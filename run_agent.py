@@ -53,10 +53,12 @@ def fetch_sec_filings(cik, days_back=30):
             if form == "8-K" and filings["filingDate"][i] >= cutoff:
                 accession = filings["accessionNumber"][i].replace("-", "")
                 filing_url = f"https://www.sec.gov/Archives/edgar/data/{cik.lstrip('0')}/{accession}/{filings['primaryDocument'][i]}"
+                content = fetch_url(filing_url, timeout=20)
                 results.append({
                     "date": filings["filingDate"][i],
                     "accession": filings["accessionNumber"][i],
                     "url": filing_url,
+                    "content": content[:3000],
                 })
         return results
     except Exception as e:
@@ -165,9 +167,11 @@ def run_agent(agent_name):
         # 8-K 公告
         filings = fetch_sec_filings("0001783879", days_back=45)
         if filings:
-            new_filings_text = f"### 最新 SEC 8-K 公告（过去30天，共{len(filings)}条）\n"
+            new_filings_text = f"### 最新 SEC 8-K 公告（过去45天，共{len(filings)}条）\n"
             for f in filings[:10]:
-                new_filings_text += f"- {f['date']} | {f['accession']} | {f['url']}\n"
+                new_filings_text += f"\n#### {f['date']} 8-K\n"
+                new_filings_text += f"链接：{f['url']}\n"
+                new_filings_text += f"正文摘要：\n{f['content']}\n"
             print(f"  发现 {len(filings)} 条 SEC 8-K 公告")
         else:
             print("  无新 SEC 8-K 公告")
