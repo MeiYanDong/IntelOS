@@ -22,27 +22,23 @@ def read_file(path):
         return ""
 
 
-def web_search(query):
-    """用 DuckDuckGo 搜索，返回摘要文本"""
-    encoded = urllib.request.quote(query)
-    url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_redirect=1&no_html=1"
+def fetch_url(url, timeout=15):
+    """抓取网页内容，返回纯文本"""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-        results = []
-        if data.get("AbstractText"):
-            results.append(data["AbstractText"])
-        for r in data.get("RelatedTopics", [])[:5]:
-            if isinstance(r, dict) and r.get("Text"):
-                results.append(r["Text"])
-        return "\n".join(results)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (research bot)"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        # 简单去除 HTML 标签
+        import re
+        text = re.sub(r"<[^>]+>", " ", raw)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
     except Exception as e:
-        return f"搜索失败: {e}"
+        return f"抓取失败: {e}"
 
 
-def fetch_sec_filings(cik, days_back=4):
-    """从 SEC EDGAR 获取最近的 8-K 公告"""
+def fetch_sec_filings(cik, days_back=30):
+    """从 SEC EDGAR 获取最近的 8-K 公告，并抓取正文摘要"""
     try:
         url = f"https://data.sec.gov/submissions/CIK{cik}.json"
         req = urllib.request.Request(url, headers={"User-Agent": "research@example.com"})
@@ -55,14 +51,23 @@ def fetch_sec_filings(cik, days_back=4):
         results = []
         for i, form in enumerate(filings["form"]):
             if form == "8-K" and filings["filingDate"][i] >= cutoff:
+                accession = filings["accessionNumber"][i].replace("-", "")
+                filing_url = f"https://www.sec.gov/Archives/edgar/data/{cik.lstrip('0')}/{accession}/{filings['primaryDocument'][i]}"
                 results.append({
                     "date": filings["filingDate"][i],
                     "accession": filings["accessionNumber"][i],
-                    "form": form,
+                    "url": filing_url,
                 })
         return results
     except Exception as e:
         return []
+
+
+def fetch_robinhood_ir():
+    """抓取 Robinhood 官方 IR 新闻页"""
+    url = "https://investors.robinhood.com/news-releases"
+    text = fetch_url(url, timeout=15)
+    return text[:3000]
 
 
 def call_claude(prompt):
@@ -117,60 +122,61 @@ def run_agent(agent_name):
 
     print(f"\n🤖 运行 {agent_name} Agent — {today}\n")
 
-    # Robinhood 专用：从 SEC 拉最新公告
+    # Robinhood 专用：从 SEC 拉最近 30 天公告 + 抓 IR 页面
     new_filings_text = ""
+    ir_text = ""
     if agent_name == "robinhood":
-        filings = fetch_sec_filings("0001783398", days_back=4)
+        filings = fetch_sec_filings("0001783398", days_back=30)
         if filings:
-            new_filings_text = "### 最新 SEC 公告（过去4天）\n"
-            for f in filings:
-                new_filings_text += f"- {f['date']} | 8-K | {f['accession']}\n"
-            print(f"  发现 {len(filings)} 条新 SEC 公告")
+            new_filings_text = f"### 最新 SEC 8-K 公告（过去30天，共{len(filings)}条）\n"
+            for f in filings[:10]:
+                new_filings_text += f"- {f['date']} | {f['accession']} | {f['url']}\n"
+            print(f"  发现 {len(filings)} 条 SEC 公告")
         else:
             print("  无新 SEC 公告")
 
-    # 用搜索补充最新新闻
-    search_query = f"Robinhood Markets HOOD {today[:7]} news trading volumes earnings" if agent_name == "robinhood" else agent_name
-    search_text = web_search(search_query)
+        print("  📡 抓取 Robinhood IR 页面...")
+        ir_text = fetch_robinhood_ir()
 
-    # 让 Claude 分析：对比 memory 和新数据，生成 diff
-    prompt = f"""你是一个专门追踪 {agent_name} 的 Agent。
+    prompt = f"""你是一个专门追踪 Robinhood Markets ($HOOD) 的投资研究 Agent，用中文输出。
 
-## 你的任务说明
+## 任务说明
 {agent_md}
 
-## 你的历史记忆（上次已知状态）
+## 历史记忆（上次已知状态）
 {memory_md}
 
-## 今天新发现的信息
+## 今天新获取的数据（{today}）
 
-### SEC 新公告
-{new_filings_text or "无"}
+### SEC EDGAR 最新 8-K 公告
+{new_filings_text or "无（过去30天）"}
 
-### 搜索到的最新信息
-{search_text[:3000]}
+### Robinhood 官方 IR 页面内容
+{ir_text[:2000] if ir_text else "抓取失败"}
 
 ---
 
-请做两件事：
+请完成以下两件事，**全程使用中文**：
 
-**第一：生成更新报告**
-格式：
-```
-## {agent_name.capitalize()} 更新 — {today}
+**第一：生成本周中文周报**
+无论有无新数据，都必须输出完整周报，格式如下：
 
-### 变化（与上次记忆对比）
-- 有什么新的数据或事件？
-- 哪些数字发生了变化（从 X → Y）？
-- 如果没有实质变化，直接说"本轮无实质更新"
+## Robinhood 周报 — {today}
 
-### 当前状态快照
-- 最新关键指标摘要
-```
+### 📊 数据更新
+（列出有变化的指标，格式：指标名：旧值 → 新值；若无新数据则注明"本周暂无新数据发布"）
 
-**第二：输出更新后的完整 memory.md 内容**
-在报告末尾，用 <MEMORY_UPDATE> 和 </MEMORY_UPDATE> 包裹更新后的完整 memory.md 文本。
-保持原有格式，更新数字和日期，补充新事件。
+### 📈 趋势观察
+（基于已有数据分析趋势，至少2-3条观察）
+
+### 🚨 待关注
+（近期需要关注的事件或风险）
+
+### 📅 下周看点
+（预期将发布的数据或事件）
+
+**第二：输出更新后的完整 memory.md**
+用 <MEMORY_UPDATE> 和 </MEMORY_UPDATE> 包裹，更新日期和内容。
 """
 
     print("  🧠 Claude 分析中...")
@@ -180,9 +186,6 @@ def run_agent(agent_name):
     import re
     memory_match = re.search(r"<MEMORY_UPDATE>(.*?)</MEMORY_UPDATE>", result, re.DOTALL)
     report = result.replace(memory_match.group(0), "").strip() if memory_match else result
-
-    # 判断是否有实质更新
-    has_update = "无实质更新" not in report and "no significant" not in report.lower()
 
     print(f"\n{'─'*60}")
     print(report)
@@ -195,17 +198,14 @@ def run_agent(agent_name):
             f.write(new_memory)
         print("  ✅ memory.md 已更新")
 
-    # 有实质更新才写入 Readwise
-    if has_update:
-        url = save_to_readwise(
-            title=f"Robinhood 更新 — {today}",
-            content=report,
-            date_str=today,
-            tags=["agent-update", "robinhood"]
-        )
-        print(f"  ✅ 已写入 Reader：{url}")
-    else:
-        print("  ℹ️  无实质更新，跳过写入 Reader")
+    # 每次都写入 Readwise
+    url = save_to_readwise(
+        title=f"Robinhood 周报 — {today}",
+        content=report,
+        date_str=today,
+        tags=["agent-update", "robinhood", "weekly-report"]
+    )
+    print(f"  ✅ 已写入 Reader：{url}")
 
 
 if __name__ == "__main__":
