@@ -7,8 +7,8 @@ Agent Runner — 通用子 Agent 执行器
 import os, sys, json, datetime, subprocess, urllib.request
 import markdown as md
 
-READWISE_TOKEN     = os.environ.get("READWISE_TOKEN")     or "KdNIlPZ2Tus2qVqsOUpNP5PXcS1vHRfHZ97eM5h5sAWUU4HgnO"
-ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY")  or "sk-9vj9M2U8pZEuWNTiiE6NARw8prlNkmx14DSO7aRc0veqsXWH"
+READWISE_TOKEN     = os.environ.get("READWISE_TOKEN")
+ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY")
 
 AGENTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
