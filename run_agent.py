@@ -70,6 +70,39 @@ def fetch_robinhood_ir():
     return text[:3000]
 
 
+def fetch_robinhood_newsroom():
+    """抓取 Robinhood Newsroom 产品公告页"""
+    url = "https://newsroom.robinhood.com"
+    text = fetch_url(url, timeout=15)
+    return text[:3000]
+
+
+def fetch_sec_10q(cik, days_back=100):
+    """检测最近是否有新的 10-Q / 10-K 季报/年报"""
+    try:
+        url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "research@example.com"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+
+        filings = data["filings"]["recent"]
+        cutoff = (datetime.date.today() - datetime.timedelta(days=days_back)).isoformat()
+
+        results = []
+        for i, form in enumerate(filings["form"]):
+            if form in ("10-Q", "10-K") and filings["filingDate"][i] >= cutoff:
+                accession = filings["accessionNumber"][i].replace("-", "")
+                filing_url = f"https://www.sec.gov/Archives/edgar/data/{cik.lstrip('0')}/{accession}/{filings['primaryDocument'][i]}"
+                results.append({
+                    "form": form,
+                    "date": filings["filingDate"][i],
+                    "url": filing_url,
+                })
+        return results
+    except Exception:
+        return []
+
+
 def call_claude(prompt):
     """调用 Claude API"""
     payload = json.dumps({
@@ -122,21 +155,37 @@ def run_agent(agent_name):
 
     print(f"\n🤖 运行 {agent_name} Agent — {today}\n")
 
-    # Robinhood 专用：从 SEC 拉最近 30 天公告 + 抓 IR 页面
+    # Robinhood 专用：从 SEC 拉最近 30 天公告 + 抓 IR / Newsroom 页面
     new_filings_text = ""
+    quarterly_text = ""
     ir_text = ""
+    newsroom_text = ""
     if agent_name == "robinhood":
+        # 8-K 公告
         filings = fetch_sec_filings("0001783398", days_back=30)
         if filings:
             new_filings_text = f"### 最新 SEC 8-K 公告（过去30天，共{len(filings)}条）\n"
             for f in filings[:10]:
                 new_filings_text += f"- {f['date']} | {f['accession']} | {f['url']}\n"
-            print(f"  发现 {len(filings)} 条 SEC 公告")
+            print(f"  发现 {len(filings)} 条 SEC 8-K 公告")
         else:
-            print("  无新 SEC 公告")
+            print("  无新 SEC 8-K 公告")
+
+        # 10-Q / 10-K 季报/年报
+        quarterly = fetch_sec_10q("0001783398", days_back=100)
+        if quarterly:
+            quarterly_text = f"### 最新季报/年报（过去100天，共{len(quarterly)}份）\n"
+            for q in quarterly[:5]:
+                quarterly_text += f"- {q['date']} | {q['form']} | {q['url']}\n"
+            print(f"  发现 {len(quarterly)} 份季报/年报")
+        else:
+            print("  无新季报/年报")
 
         print("  📡 抓取 Robinhood IR 页面...")
         ir_text = fetch_robinhood_ir()
+
+        print("  📡 抓取 Robinhood Newsroom...")
+        newsroom_text = fetch_robinhood_newsroom()
 
     prompt = f"""## 角色/role
 
@@ -154,8 +203,14 @@ def run_agent(agent_name):
 ### SEC EDGAR 最新 8-K 公告（过去30天）
 {new_filings_text or "无"}
 
+### SEC EDGAR 最新季报/年报（10-Q / 10-K，过去100天）
+{quarterly_text or "无"}
+
 ### Robinhood 官方 IR 页面
 {ir_text[:2000] if ir_text else "抓取失败"}
+
+### Robinhood Newsroom（产品公告）
+{newsroom_text[:2000] if newsroom_text else "抓取失败"}
 
 ## 任务/task
 
