@@ -163,7 +163,7 @@ def run_agent(agent_name):
     quarterly_text = ""
     if agent_name == "robinhood":
         # 8-K 公告
-        filings = fetch_sec_filings("0001783398", days_back=30)
+        filings = fetch_sec_filings("0001783879", days_back=45)
         if filings:
             new_filings_text = f"### 最新 SEC 8-K 公告（过去30天，共{len(filings)}条）\n"
             for f in filings[:10]:
@@ -173,7 +173,7 @@ def run_agent(agent_name):
             print("  无新 SEC 8-K 公告")
 
         # 10-Q / 10-K 季报/年报
-        quarterly = fetch_sec_10q("0001783398", days_back=100)
+        quarterly = fetch_sec_10q("0001783879", days_back=100)
         if quarterly:
             quarterly_text = f"### 最新季报/年报（过去100天，共{len(quarterly)}份）\n"
             for q in quarterly[:5]:
